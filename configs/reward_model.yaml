@@ -1,0 +1,36 @@
+# configs/reward_model.yaml
+# Stage 2: Reward Model Training Configuration
+
+experiment:
+  name: "reward_model_qwen_0.5b"
+  output_dir: "outputs"
+  seed: 42
+
+model:
+  name: "Qwen/Qwen2.5-0.5B-Instruct"
+  torch_dtype: "float32"
+  hidden_size: 896  # auto-detected if null
+  freeze_base: false  # whether to freeze the base LM
+
+data:
+  source: "toy"  # "toy" | "huggingface" | "json"
+  # For huggingface:
+  # dataset_name: "Anthropic/hh-rlhf"
+  # split: "train"
+  # max_samples: 5000
+  # prompt_column: "prompt"
+  # chosen_column: "chosen"
+  # rejected_column: "rejected"
+  max_length: 256
+  train_test_split: 0.8
+
+training:
+  batch_size: 2
+  learning_rate: 1.0e-5
+  epochs: 5
+  optimizer: "AdamW"
+  weight_decay: 0.01
+
+evaluation:
+  visualize: true
+  save_plots: true

@@ -1,0 +1,35 @@
+model:
+  policy_model_path: "outputs/sft_qwen_0.5b/sft_model"  
+  base_model_name: "Qwen/Qwen2.5-0.5B-Instruct"  
+  reward_model_path: "outputs/reward_model_qwen_0.5b/value_head.pt"  
+  torch_dtype: "float32"
+
+ppo:
+  learning_rate: 1.0e-6
+  kl_coef: 0.1
+  clip_range: 0.2
+  num_steps: 10
+  batch_size: 4
+  max_new_tokens: 80
+  temperature: 0.7
+  top_p: 0.9
+  gradient_clip: 1.0
+
+
+data:
+  source: "toy"
+  # For huggingface:
+  # dataset_name: "tatsu-lab/alpaca"
+  # split: "train"
+  # max_samples: 100
+  # prompt_column: "instruction"
+  test_prompts:
+   - "Write a Python function to find the maximum value in a list."
+   - "Explain what machine learning is."
+   - "Tell me an interesting story."
+   - "How can I improve my English?"
+
+tracking:
+  log_interval: 1
+  save_plots: true
+  compare_before_after: true
