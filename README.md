@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # RL Research Portfolio
 
 Reproducible implementations of deep RL papers in PyTorch.
@@ -32,4 +32,3 @@ Built by [Appau Gideon Kofi Amo](mailto:gideonamoappau@gmail.com).
 See [LICENSE](LICENSE) for details.
 
 MIT License
->>>>>>> 251fd6310f398fe07db0c683d62622f6c65e32db
