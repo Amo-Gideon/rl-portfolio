@@ -15,6 +15,6 @@ Built by [Appau Gideon Kofi Amo](mailto:gideonamoappau@gmail.com).
 
 ## License
 
-See [LICENSE](LICENSE) for details.\n\nSee [LICENSE](LICENSE) for details.
+See [LICENSE](LICENSE) for details.
 
 MIT License
