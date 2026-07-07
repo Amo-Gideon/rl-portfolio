@@ -199,7 +199,3 @@ If you use this project in your research or blog, please cite:
 - **GitHub:** [@Amo-Gideon](https://github.com/Amo-Gideon)
 
 ---
-
-## 📜 License
-
-MIT License — see [LICENSE](LICENSE) for details.
