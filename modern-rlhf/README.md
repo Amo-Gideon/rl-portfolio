@@ -2,11 +2,10 @@
 
 [![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![GitHub stars](https://img.shields.io/github/stars/Amo-Gideon/modern-rlhf?style=social)](https://github.com/Amo-Gideon/modern-rlhf)
 
-> A **minimal yet production-grade** implementation of the RLHF three-stage pipeline: **SFT → Reward Model → PPO Alignment**. Built from tutorial scripts into a modular, configurable, and blog-worthy framework.
+> A **production-grade** implementation of the RLHF three-stage pipeline: **SFT → Reward Model → PPO Alignment**. Built with Hugging Face TRL, LoRA, and real datasets.
 
-[📖 Blog Post](docs/BLOG.md) · [🚀 Quick Start](#quick-start) · [📊 Results](#results) · [🤝 Contributing](#contributing)
+[📖 Blog Post](docs/BLOG.md) · [🚀 Quick Start](#quick-start) · [📊 Results](#results)
 
 ---
 
@@ -15,12 +14,12 @@
 | Feature | Description |
 |---------|-------------|
 | 🔧 **Modular Design** | Each stage is self-contained; swap data, models, or trainers independently |
-| ⚙️ **Config-Driven** | All hyperparameters via YAML zero code changes needed |
-| 📚 **Real Dataset Support** | Swap `toy` data for HuggingFace `datasets` with one line |
-| 📈 **Experiment Tracking** | Built-in Weights & Biases integration |
-| 🔄 **Reproducible** | Fixed seeds, pinned dependencies, timestamped outputs |
-| 💻 **CPU/GPU Agnostic** | Automatic device detection; works on laptops for demos |
-| ✍️ **Blog-Ready** | Clean logs, auto-generated plots, before/after comparisons |
+| ⚙️ **Config-Driven** | All hyperparameters via YAML — zero code changes needed |
+| 🧠 **TRL Integration** | Uses battle-tested TRL library for SFT and PPO |
+| 🎯 **LoRA Support** | Memory-efficient training with PEFT adapters |
+| 📚 **Real Datasets** | Alpaca for SFT, HH-RLHF for reward model |
+| 📈 **Full Evaluation** | Before/after comparison with reward model scoring |
+| 🔬 **Reproducible** | Fixed seeds, pinned dependencies, timestamped outputs |
 
 ---
 
@@ -45,6 +44,12 @@ python scripts/run_reward_model.py --config configs/reward_model.yaml
 
 # Stage 3: PPO Alignment
 python scripts/run_ppo.py --config configs/ppo.yaml
+
+# Evaluation: Compare all stages
+python scripts/eval.py \
+  --sft-path outputs/sft_latest/sft_model \
+  --ppo-path outputs/ppo_latest/aligned_model \
+  --rm-path outputs/rm_latest/reward_model
 ```
 
 Or run everything at once:
@@ -62,11 +67,9 @@ bash scripts/run_full_pipeline.sh
 │   Stage 1   │ ──▶ │    Stage 2      │ ──▶ │    Stage 3      │
 │    SFT      │     │  Reward Model   │     │  PPO Alignment  │
 │             │     │                 │     │                 │
-│ Instruction │     │  (prompt,       │     │  Actor + Ref    │
-│  Data  ────▶│     │   chosen,       │     │  + Reward Model │
-│             │     │   rejected)     │     │                 │
-│ SFT Model   │     │ Bradley-Terry │     │  Clipped PPO    │
-│  Output     │     │   Loss          │     │  + KL Penalty   │
+│   Alpaca    │     │  HH-RLHF pairs  │     │  Actor + Ref    │
+│  + LoRA     │     │  Bradley-Terry  │     │  + Reward Model │
+│             │     │   Loss          │     │  TRL PPOTrainer │
 └─────────────┘     └─────────────────┘     └─────────────────┘
 ```
 
@@ -74,34 +77,38 @@ bash scripts/run_full_pipeline.sh
 
 ## 📊 Results
 
-Running the full pipeline on a **0.5B parameter model** with toy data:
+Running the full pipeline on **Qwen2.5-0.5B-Instruct** (RTX 4090, 24GB):
 
-| Stage | Metric | Before | After |
-|-------|--------|--------|-------|
-| **SFT** | Training Loss | | **1.05** |
-| **SFT** | Response Quality | Generic | Task-specific |
-| **RM** | Test Accuracy | | **100%** (4/4 pairs) |
-| **PPO** | Avg Reward | 0.67 | **2.80** (peak) |
-| **PPO** | KL Divergence | 0.0 | **0.18** (stable) |
+| Stage | Metric | Value | Notes |
+|-------|--------|-------|-------|
+| **SFT** | Final Loss | **1.235** | 10K Alpaca samples, 1 epoch, LoRA r=16 |
+| **SFT** | Trainable Params | **8.8M / 502.8M** | 1.75% of total parameters |
+| **RM** | Test Accuracy | **100%** | 4/4 pairs correct (toy data) |
+| **PPO** | Avg Reward Before | **0.213** | Baseline (SFT model) |
+| **PPO** | Avg Reward After | **0.675** | After 300 PPO steps |
+| **PPO** | Improvement | **+0.462** | **+217% relative improvement** |
 
-**Key observation:** Even with only 10 PPO steps and 14 SFT samples, the model shifts from generic completions to structured, helpful responses. KL divergence stays low (< 0.2), confirming the policy does not drift far from the SFT initialization.
+### Before/After Examples
+
+| Prompt | Before (SFT) | After (PPO) | Reward Δ |
+|--------|-----------|------------|---------|
+| "Write a Python function to find the maximum value in a list." | `def max_list_val(lst): ...` | `def max_value_in_list(nums): ...` | **+0.71** |
+| "Explain what machine learning is in simple terms." | 4-sentence paragraph | 2-sentence concise | **-0.91** |
+| "Describe the difference between a stack and a queue." | Incorrect (LIFO/FIFO swapped) | Correct (LIFO vs FIFO) | **+0.81** |
+| "How does backpropagation work in neural networks?" | General description | More technical, gradient descent focus | **+0.18** |
+| "Write a SQL query to find the top 5 highest-paid employees." | `SELECT * FROM Employees ORDER BY Salary DESC LIMIT 5;` | Same | **0.00** |
+| "Explain the concept of attention in transformer models." | Vague description | Technical, attention map focus | **+1.98** |
+
+### Key Observations
+
+- **Code generation improved**: SFT → PPO responses became more concise and correct
+- **Technical explanations improved**: Attention and backpropagation answers became more precise
+- **Some degradation**: The "machine learning" prompt became overly concise (negative reward)
+- **KL divergence stayed low**: Policy did not drift far from SFT initialization
 
 ### Training Curves
 
-**Reward Model — Chosen vs Rejected Distribution**
-
-![Reward Distribution](assets/reward_distribution.png)
-
-**PPO Alignment — Reward, KL, Loss, and Response Length over 10 Steps**
-
-![PPO Training Stats](assets/ppo_training_stats.png)
-
-### Before / After Example
-
-**Prompt:** *"Write a Python function to check if a number is even."*
-
-- **Before SFT:** *"In Python, you can use the built-in `len()` function..."* (hallucinated)
-- **After PPO:** *"```python\ndef is_even(n):\n    return n % 2 == 0\n```"* (correct, structured)
+*Plots generated from training logs — see `assets/` directory.*
 
 ---
 
@@ -114,30 +121,35 @@ modern-rlhf/
 │   ├── reward_model.yaml
 │   └── ppo.yaml
 ├── src/rlhf_pipeline/
-│   ├── data/                 # Data loading & generation
-│   ├── models/               # Reward model, reference model wrappers
+│   ├── data/                 # Data loading (Alpaca, HH-RLHF)
+│   ├── models/               # Reward model, reference model
 │   ├── trainers/             # SFT, RM, and PPO trainers
-│   ├── utils/                # Logging, checkpointing, config
+│   ├── utils/                # Config, logging, metrics, checkpointing
 │   └── cli.py                # Unified CLI entry point
 ├── scripts/                  # Executable training scripts
+│   ├── run_sft.py
+│   ├── run_reward_model.py
+│   ├── run_ppo.py
+│   ├── run_full_pipeline.sh
+│   └── eval.py               # Before/after evaluation
 ├── tests/                    # Sanity checks
-├── docs/                     # Blog drafts & technical write-ups
-└── assets/                   # Diagrams, plots, screenshots
+├── docs/                     # Blog post & technical write-ups
+├── assets/                   # Training curves, plots, diagrams
+└── README.md
 ```
 
 ---
 
-## 🎛️ Customization Guide
+## 🎛️ Customization
 
 ### Use Your Own Data
 
 Edit `configs/sft.yaml`:
-
 ```yaml
 data:
-  source: "huggingface"  # or "toy" for demo
-  dataset_name: "tatsu-lab/alpaca"
-  split: "train"
+  source: "huggingface"
+  dataset_name: "HuggingFaceH4/ultrachat_200k"
+  split: "train_sft"
   max_samples: 10000
 ```
 
@@ -145,7 +157,7 @@ data:
 
 ```yaml
 model:
-  name: "Qwen/Qwen2.5-0.5B-Instruct"  # or "meta-llama/Llama-2-7b-hf"
+  name: "Qwen/Qwen2.5-1.5B-Instruct"
   torch_dtype: "bfloat16"
 ```
 
@@ -153,17 +165,19 @@ model:
 
 ```yaml
 ppo:
-  learning_rate: 1.0e-6
-  kl_coef: 0.1
+  learning_rate: 1.0e-5
+  kl_coef: 0.2
   clip_range: 0.2
-  num_steps: 10
+  num_steps: 300
+  batch_size: 16
+  ppo_epochs: 2
 ```
 
 ---
 
 ## 📝 Blog Post
 
-For a deep dive into the architecture, lessons learned, and how to scale this to real datasets, see the companion blog post: [`docs/BLOG.md`](docs/BLOG.md).
+See [`docs/BLOG.md`](docs/BLOG.md) for a deep dive into the architecture, lessons learned, and scaling strategies.
 
 ---
 
@@ -178,8 +192,6 @@ For a deep dive into the architecture, lessons learned, and how to scale this to
 ---
 
 ## 📄 Citation
-
-If you use this project in your research or blog, please cite:
 
 ```bibtex
 @software{modern_rlhf,
@@ -197,5 +209,3 @@ If you use this project in your research or blog, please cite:
 - **Author:** Appau Gideon Kofi Amo
 - **Email:** gideonamoappau@gmail.com
 - **GitHub:** [@Amo-Gideon](https://github.com/Amo-Gideon)
-
----
