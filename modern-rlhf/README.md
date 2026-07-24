@@ -14,7 +14,7 @@
 | Feature | Description |
 |---------|-------------|
 | 🔧 **Modular Design** | Each stage is self-contained; swap data, models, or trainers independently |
-| ⚙️ **Config-Driven** | All hyperparameters via YAML — zero code changes needed |
+| ⚙️ **Config-Driven** | All hyperparameters via YAML zero code changes needed |
 | 🧠 **TRL Integration** | Uses battle-tested TRL library for SFT and PPO |
 | 🎯 **LoRA Support** | Memory-efficient training with PEFT adapters |
 | 📚 **Real Datasets** | Alpaca for SFT, HH-RLHF for reward model |
@@ -108,7 +108,7 @@ Running the full pipeline on **Qwen2.5-0.5B-Instruct** (RTX 4090, 24GB):
 
 ### Training Curves
 
-*Plots generated from training logs — see `assets/` directory.*
+*Plots generated from training logs see `assets/` directory.*
 
 ---
 
