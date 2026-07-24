@@ -267,7 +267,7 @@ Running the full pipeline on **Qwen2.5-0.5B-Instruct** (RTX 4090, 24GB):
 
 ## 9. Conclusion
 
-RLHF is not magic — it's a systematic pipeline of three well-understood stages. The hard part is not the math; it's the engineering: data curation, distributed training, and hyperparameter tuning.
+RLHF is not magic, it's a systematic pipeline of three well-understood stages. The hard part is not the math; it's the engineering: data curation, distributed training, and hyperparameter tuning.
 
 This project gives you a clean foundation to experiment with. Start with toy data, understand the mechanics, then scale up.
 
