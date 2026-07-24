@@ -1,0 +1,30 @@
+# Core
+torch>=2.0.0
+transformers>=4.40.0
+datasets>=2.14.0
+accelerate>=0.25.0
+
+# DPO / TRL
+trl>=0.8.0
+
+# LoRA
+peft>=0.9.0
+
+# Quantization (for 4-bit on small GPUs)
+bitsandbytes>=0.43.0
+
+# Logging
+wandb>=0.16.0
+
+# Model download
+huggingface-hub>=0.20.0
+modelscope>=1.13.0
+
+# Server
+fastapi>=0.110.0
+uvicorn>=0.27.0
+twilio>=9.0.0
+
+# Utils
+numpy>=1.24.0
+scipy>=1.10.0

@@ -12,7 +12,8 @@ from rlhf_pipeline.trainers.ppo_trainer import run_ppo
 
 def main():
     parser = argparse.ArgumentParser(description="Run PPO Alignment (Stage 3)")
-    parser.add_argument("--config", type=str, default="configs/ppo.yaml", help="Path to config file")
+    parser.add_argument("--config", type=str, default="configs/ppo.yaml",
+                       help="Path to config file")
     args = parser.parse_args()
 
     config = load_config(args.config)

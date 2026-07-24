@@ -1,266 +1,347 @@
-"""PPO alignment training stage."""
+"""PPO alignment training stage using TRL."""
 import os
 import random
 import torch
-import torch.nn.functional as F
 from transformers import AutoModelForCausalLM, AutoTokenizer
-from rlhf_pipeline.models.reward_model import SimpleRewardModel
-from rlhf_pipeline.models.reference_model import create_reference_model
-from rlhf_pipeline.utils.logging_utils import setup_logger
-from rlhf_pipeline.utils.checkpoint import save_json
-import matplotlib
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
+from peft import LoraConfig, get_peft_model, TaskType
+from trl import PPOTrainer as TRLPPOTrainer, PPOConfig as TRLPPOConfig
+from rlhf_pipeline.models.reward_model import NeuralRewardModel
+from rlhf_pipeline.data.sft_data import load_sft_data
+from rlhf_pipeline.utils.config import set_seed
+from rlhf_pipeline.utils.logging_utils import setup_logger, WandbTracker
+from rlhf_pipeline.utils.checkpoint import save_json, create_symlink
+from rlhf_pipeline.utils.metrics import plot_training_curves, save_comparison_results
 
 
-def generate_response(model, tokenizer, prompt, max_new_tokens=80, temperature=0.7):
-    messages = [{"role": "user", "content": prompt}]
-    text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
-    inputs = tokenizer([text], return_tensors="pt").to(model.device)
-
-    with torch.no_grad():
-        outputs = model.generate(
-            **inputs, max_new_tokens=max_new_tokens,
-            do_sample=True, temperature=temperature, top_p=0.9
+def generate_responses(model, tokenizer, prompts, max_new_tokens=128, 
+                       temperature=0.8, top_p=0.9, top_k=50, device="cuda"):
+    """Generate responses for a list of prompts."""
+    responses = []
+    for prompt in prompts:
+        messages = [{"role": "user", "content": prompt}]
+        text = tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
         )
+        inputs = tokenizer([text], return_tensors="pt").to(device)
 
-    response = tokenizer.decode(outputs[0][inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
-    return response, outputs[0]
-
-
-def compute_log_probs(model, input_ids, attention_mask):
-    outputs = model(input_ids=input_ids, attention_mask=attention_mask)
-    logits = outputs.logits
-    shift_logits = logits[:, :-1, :]
-    shift_labels = input_ids[:, 1:]
-    log_probs = F.log_softmax(shift_logits, dim=-1)
-    token_log_probs = log_probs.gather(2, shift_labels.unsqueeze(-1)).squeeze(-1)
-    shift_mask = attention_mask[:, 1:]
-    token_log_probs = token_log_probs * shift_mask
-    return token_log_probs.sum(dim=-1) / shift_mask.sum(dim=-1)
-
-
-def compute_kl_divergence(policy_model, ref_model, input_ids, attention_mask):
-    with torch.no_grad():
-        p_out = policy_model(input_ids=input_ids, attention_mask=attention_mask)
-        p_logits = p_out.logits[:, :-1, :]
-        p_log_probs = F.log_softmax(p_logits, dim=-1)
-        p_probs = torch.softmax(p_logits, dim=-1)
-
-        r_out = ref_model(input_ids=input_ids, attention_mask=attention_mask)
-        r_logits = r_out.logits[:, :-1, :]
-        r_log_probs = F.log_softmax(r_logits, dim=-1)
-
-        kl_per_token = (p_probs * (p_log_probs - r_log_probs)).sum(dim=-1)
-        shift_mask = attention_mask[:, 1:]
-        kl = (kl_per_token * shift_mask).sum() / shift_mask.sum()
-    return kl.item()
-
-
-class PPOTrainer:
-    def __init__(self, policy_model, ref_model, reward_model, tokenizer, config):
-        self.policy_model = policy_model
-        self.ref_model = ref_model
-        self.reward_model = reward_model
-        self.tokenizer = tokenizer
-        self.kl_coef = config.ppo.kl_coef
-        self.clip_range = config.ppo.clip_range
-        self.optimizer = torch.optim.AdamW(policy_model.parameters(), lr=config.ppo.learning_rate)
-        self.stats = {
-            "rewards": [], "kl_divergences": [], "policy_losses": [],
-            "total_losses": [], "response_lengths": [],
-        }
-
-    def train_step(self, prompts):
-        self.policy_model.train()
-        batch_rewards, batch_kl, batch_lengths = [], [], []
-        all_input_ids, all_masks, all_old_log_probs = [], [], []
-
-        for prompt in prompts:
-            response, full_ids = generate_response(
-                self.policy_model, self.tokenizer, prompt,
-                max_new_tokens=60, temperature=0.8
+        with torch.no_grad():
+            outputs = model.generate(
+                **inputs,
+                max_new_tokens=max_new_tokens,
+                min_new_tokens=10,
+                do_sample=True,
+                temperature=temperature,
+                top_p=top_p,
+                top_k=top_k,
+                pad_token_id=tokenizer.pad_token_id,
+                eos_token_id=tokenizer.eos_token_id,
             )
-            input_ids = full_ids.unsqueeze(0)
-            attention_mask = torch.ones_like(input_ids)
 
-            reward = self.reward_model.score(prompt, response)
-            batch_rewards.append(reward)
-            batch_lengths.append(len(response))
+        response = tokenizer.decode(
+            outputs[0][inputs["input_ids"].shape[-1]:],
+            skip_special_tokens=True,
+        )
+        responses.append(response)
 
-            kl = compute_kl_divergence(self.policy_model, self.ref_model, input_ids, attention_mask)
-            batch_kl.append(kl)
-
-            with torch.no_grad():
-                old_log_prob = compute_log_probs(self.policy_model, input_ids, attention_mask)
-            all_old_log_probs.append(old_log_prob)
-            all_input_ids.append(input_ids)
-            all_masks.append(attention_mask)
-
-        rewards_t = torch.tensor(batch_rewards, dtype=torch.float32)
-        advantages = rewards_t - rewards_t.mean()
-        advantages = advantages / (advantages.std() + 1e-8)
-
-        total_policy_loss = 0.0
-        for i, (ids, mask, old_log_p) in enumerate(zip(all_input_ids, all_masks, all_old_log_probs)):
-            new_log_prob = compute_log_probs(self.policy_model, ids, mask)
-            ratio = torch.exp(new_log_prob - old_log_p)
-            advantage = advantages[i]
-            surr1 = ratio * advantage
-            surr2 = torch.clamp(ratio, 1.0 - self.clip_range, 1.0 + self.clip_range) * advantage
-            policy_loss = -torch.min(surr1, surr2)
-            total_policy_loss += policy_loss
-
-        avg_policy_loss = total_policy_loss / len(prompts)
-        avg_kl = sum(batch_kl) / len(batch_kl)
-        kl_penalty = self.kl_coef * avg_kl
-        total_loss = avg_policy_loss + kl_penalty
-
-        self.optimizer.zero_grad()
-        total_loss.backward()
-        torch.nn.utils.clip_grad_norm_(self.policy_model.parameters(), 1.0)
-        self.optimizer.step()
-
-        self.stats["rewards"].append(sum(batch_rewards) / len(batch_rewards))
-        self.stats["kl_divergences"].append(avg_kl)
-        self.stats["policy_losses"].append(avg_policy_loss.item())
-        self.stats["total_losses"].append(total_loss.item())
-        self.stats["response_lengths"].append(sum(batch_lengths) / len(batch_lengths))
-
-        return {
-            "avg_reward": self.stats["rewards"][-1],
-            "avg_kl": avg_kl,
-            "policy_loss": avg_policy_loss.item(),
-            "total_loss": total_loss.item(),
-        }
-
-
-def plot_ppo_stats(stats, save_path):
-    fig, axes = plt.subplots(2, 2, figsize=(12, 10))
-    metrics = [
-        ("rewards", "Average Reward", "Reward Value"),
-        ("kl_divergences", "KL Divergence", "KL"),
-        ("policy_losses", "Policy Loss", "Loss"),
-        ("response_lengths", "Avg Response Length", "Chars"),
-    ]
-    for ax, (key, title, ylabel) in zip(axes.flat, metrics):
-        ax.plot(stats[key], "o-", markersize=4)
-        ax.set_title(title)
-        ax.set_xlabel("Step")
-        ax.set_ylabel(ylabel)
-        ax.grid(True, alpha=0.3)
-    plt.tight_layout()
-    plt.savefig(save_path, dpi=150, bbox_inches="tight")
-    plt.close()
+    return responses
 
 
 def run_ppo(config, output_dir: str):
+    """Run PPO alignment using TRL's PPOTrainer."""
     logger = setup_logger("PPO", log_file=os.path.join(output_dir, "ppo.log"))
     logger.info("=" * 60)
     logger.info("Stage 3: PPO Alignment Training")
     logger.info("=" * 60)
 
+    set_seed(config.experiment.seed)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     logger.info(f"Using device: {device}")
 
-    # Load policy model (SFT checkpoint or base)
+    tracker = WandbTracker(
+        project=config.tracking.project_name if config.tracking.project_name != "none" else "none",
+        config={
+            "stage": "ppo",
+            "model": config.model.base_model_name,
+            "learning_rate": config.ppo.learning_rate,
+            "kl_coef": config.ppo.kl_coef,
+            "num_steps": config.ppo.num_steps,
+            "batch_size": config.ppo.batch_size,
+        },
+        run_name=f"{config.experiment.name}_ppo",
+    )
+
+    logger.info("Loading tokenizer...")
+    tokenizer = AutoTokenizer.from_pretrained(
+        config.model.base_model_name,
+        trust_remote_code=config.model.trust_remote_code,
+    )
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        tokenizer.pad_token_id = tokenizer.eos_token_id
+
+    from trl import AutoModelForCausalLMWithValueHead
     sft_path = config.model.policy_model_path
     if os.path.exists(sft_path):
         logger.info(f"Loading SFT model from: {sft_path}")
-        policy_model = AutoModelForCausalLM.from_pretrained(sft_path, torch_dtype=torch.float32)
-        tokenizer = AutoTokenizer.from_pretrained(sft_path)
-    else:
-        logger.info(f"SFT model not found. Loading base: {config.model.base_model_name}")
-        policy_model = AutoModelForCausalLM.from_pretrained(config.model.base_model_name, torch_dtype=torch.float32)
-        tokenizer = AutoTokenizer.from_pretrained(config.model.base_model_name)
-
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-    policy_model = policy_model.to(device)
-
-    # Reference model
-    logger.info("Creating frozen reference model...")
-    ref_model = create_reference_model(policy_model)
-
-    # Reward model
-    logger.info("Initializing reward model...")
-    rm_backbone = None
-    if os.path.exists(config.model.reward_model_path):
-        rm_backbone = AutoModelForCausalLM.from_pretrained(
-            config.model.base_model_name, torch_dtype=torch.float32
+        base_model = AutoModelForCausalLM.from_pretrained(
+            sft_path,
+            torch_dtype=getattr(torch, config.model.torch_dtype),
+            trust_remote_code=config.model.trust_remote_code,
+            device_map="auto",
         )
-        reward_model = SimpleRewardModel(tokenizer, rm_backbone, config.model.reward_model_path)
+    else:
+        logger.warning(f"SFT model not found at {sft_path}. Loading base model.")
+        base_model = AutoModelForCausalLM.from_pretrained(
+            config.model.base_model_name,
+            torch_dtype=getattr(torch, config.model.torch_dtype),
+            trust_remote_code=config.model.trust_remote_code,
+            device_map="auto",
+        )
+    policy_model = AutoModelForCausalLMWithValueHead.from_pretrained(base_model)
+
+    # Note: LoRA not applied for PPO with ValueHead model
+
+    # Create reference model (frozen copy)
+    logger.info("Creating frozen reference model...")
+    from trl import AutoModelForCausalLMWithValueHead
+    ref_model = AutoModelForCausalLMWithValueHead.from_pretrained(base_model)
+    ref_model.eval()
+    for param in ref_model.parameters():
+        param.requires_grad = False
+
+    # Load reward model
+    logger.info("Loading reward model...")
+    rm_path = config.model.reward_model_path
+    if os.path.exists(rm_path):
+        reward_model = NeuralRewardModel(rm_path, tokenizer, device=str(device))
         logger.info("Loaded trained neural reward model.")
     else:
-        reward_model = SimpleRewardModel(tokenizer)
-        logger.info("Using rule-based reward model fallback.")
+        logger.warning("Trained reward model not found. Using fallback scoring.")
+        from transformers import AutoModelForSequenceClassification
+        fallback_rm = AutoModelForSequenceClassification.from_pretrained(
+            config.model.base_model_name,
+            num_labels=1,
+            torch_dtype=getattr(torch, config.model.torch_dtype),
+        ).to(device)
+        reward_model = NeuralRewardModel(
+            config.model.base_model_name, tokenizer, device=str(device)
+        )
+        reward_model.model = fallback_rm
+
+    # Load prompts for training
+    logger.info("Loading training prompts...")
+    if config.data.source == "huggingface":
+        from datasets import load_dataset
+        dataset = load_dataset(config.data.dataset_name, split=config.data.split)
+        if config.data.max_samples:
+            dataset = dataset.shuffle(seed=config.experiment.seed).select(
+                range(min(config.data.max_samples, len(dataset)))
+            )
+        prompts = [ex[config.data.prompt_column or "instruction"] for ex in dataset]
+    else:
+        prompts = [
+            "Explain what deep learning is.",
+            "Write a bubble sort in Python.",
+            "How do I learn programming?",
+            "What is artificial intelligence?",
+            "Recommend technical books.",
+            "How to prepare for a technical interview?",
+            "Explain RESTful API.",
+            "Write an encouraging message for a student.",
+        ] * 100
 
     # Test prompts
     test_prompts = config.data.test_prompts
-    logger.info("Testing before PPO alignment...")
-    before_responses, before_rewards = [], []
-    for prompt in test_prompts:
-        response, _ = generate_response(policy_model, tokenizer, prompt, max_new_tokens=80, temperature=0.7)
-        reward = reward_model.score(prompt, response)
-        before_responses.append(response)
-        before_rewards.append(reward)
-        logger.info(f"  [{reward:.3f}] {response[:60]}...")
 
-    # PPO training
-    ppo = PPOTrainer(policy_model, ref_model, reward_model, tokenizer, config)
-
-    train_pool = [
-        "Explain what deep learning is.",
-        "Write a bubble sort in Python.",
-        "How do I learn programming?",
-        "What is artificial intelligence?",
-        "Recommend technical books.",
-        "How to prepare for a technical interview?",
-        "Explain RESTful API.",
-        "Write an encouraging message for a student.",
-    ]
-
-    logger.info("Starting PPO training...")
-    for step in range(config.ppo.num_steps):
-        step_prompts = random.sample(train_pool, min(config.ppo.batch_size, len(train_pool)))
-        stats = ppo.train_step(step_prompts)
-        logger.info(f"Step {step+1}/{config.ppo.num_steps} | "
-                    f"Reward: {stats['avg_reward']:.3f} | "
-                    f"KL: {stats['avg_kl']:.4f} | "
-                    f"Loss: {stats['policy_loss']:.4f}")
-
-    # Test after
-    logger.info("Testing after PPO alignment...")
+    # Generate BEFORE PPO
+    logger.info("Generating responses BEFORE PPO...")
     policy_model.eval()
-    after_responses, after_rewards = [], []
-    for prompt in test_prompts:
-        response, _ = generate_response(policy_model, tokenizer, prompt, max_new_tokens=80, temperature=0.7)
-        reward = reward_model.score(prompt, response)
-        after_responses.append(response)
-        after_rewards.append(reward)
+    before_responses = generate_responses(
+        policy_model, tokenizer, test_prompts,
+        max_new_tokens=config.ppo.max_new_tokens,
+        temperature=config.ppo.temperature,
+        top_p=config.ppo.top_p,
+        top_k=config.ppo.top_k,
+        device=device,
+    )
+    before_rewards = [
+        reward_model.score(p, r) for p, r in zip(test_prompts, before_responses)
+    ]
+    for prompt, response, reward in zip(test_prompts, before_responses, before_rewards):
+        logger.info(f"  [{reward:.3f}] {prompt[:50]}... -> {response[:60]}...")
 
+    # Setup TRL PPOConfig
+    ppo_config = TRLPPOConfig(
+        model_name=config.model.base_model_name,
+        learning_rate=config.ppo.learning_rate,
+        batch_size=config.ppo.batch_size,
+        mini_batch_size=config.ppo.mini_batch_size,
+        gradient_accumulation_steps=1,
+        ppo_epochs=config.ppo.ppo_epochs,
+        cliprange=config.ppo.clip_range,
+        cliprange_value=0.2,
+        gamma=1.0,
+        lam=0.95,
+        seed=config.experiment.seed,
+        log_with="wandb" if tracker.enabled else None,
+    )
+
+    # Prepare dataset for TRL
+    from datasets import Dataset
+    ppo_data = [{"query": p} for p in prompts[:config.ppo.batch_size * config.ppo.num_steps]]
+    ppo_dataset = Dataset.from_list(ppo_data)
+
+    ppo_trainer = TRLPPOTrainer(
+        config=ppo_config,
+        model=policy_model,
+        ref_model=ref_model,
+        tokenizer=tokenizer,
+        dataset=ppo_dataset,
+    )
+
+    # Training loop
+    logger.info(f"Starting PPO training for {config.ppo.num_steps} steps...")
+    stats_history = {
+        "rewards": [],
+        "kl_divergences": [],
+        "policy_losses": [],
+        "values": [],
+        "response_lengths": [],
+    }
+
+    for step in range(config.ppo.num_steps):
+        batch_start = (step * config.ppo.batch_size) % len(ppo_dataset)
+        batch_end = min(batch_start + config.ppo.batch_size, len(ppo_dataset))
+        batch_queries = [ppo_dataset[i]["query"] for i in range(batch_start, batch_end)]
+
+        # Generate responses with current policy
+        policy_model.eval()
+        batch_responses = generate_responses(
+            ppo_trainer.model, tokenizer, batch_queries,
+            max_new_tokens=config.ppo.max_new_tokens,
+            temperature=config.ppo.temperature,
+            top_p=config.ppo.top_p,
+            top_k=config.ppo.top_k,
+            device=device,
+        )
+
+        # Compute rewards
+        batch_rewards = [
+            reward_model.score(q, r) for q, r in zip(batch_queries, batch_responses)
+        ]
+        batch_rewards_tensor = [torch.tensor(r, dtype=torch.float32) for r in batch_rewards]
+
+        # Prepare queries for TRL
+        batch_query_tensors = [
+            tokenizer.encode(q, return_tensors="pt").squeeze() for q in batch_queries
+        ]
+        batch_response_tensors = [
+            tokenizer.encode(r, return_tensors="pt").squeeze() for r in batch_responses
+        ]
+
+        # Filter out empty responses before PPO step
+        valid_indices = [i for i, r in enumerate(batch_response_tensors) if r.numel() > 0]
+        if len(valid_indices) < len(batch_response_tensors):
+            logger.warning(f"Filtered {len(batch_response_tensors) - len(valid_indices)} empty responses")
+        batch_query_tensors = [batch_query_tensors[i] for i in valid_indices]
+        batch_response_tensors = [batch_response_tensors[i] for i in valid_indices]
+        batch_rewards_tensor = [batch_rewards_tensor[i] for i in valid_indices]
+        
+        if len(batch_query_tensors) == 0:
+            logger.warning("All responses empty, skipping step")
+            continue
+        
+        # Run PPO step
+        stats = ppo_trainer.step(batch_query_tensors, batch_response_tensors, batch_rewards_tensor)
+
+        # Log stats
+        avg_reward = sum(batch_rewards) / len(batch_rewards)
+        kl = stats.get("objective/kl", 0.0)
+        policy_loss = stats.get("ppo/loss/policy", 0.0)
+        value_loss = stats.get("ppo/loss/value", 0.0)
+
+        stats_history["rewards"].append(avg_reward)
+        stats_history["kl_divergences"].append(float(kl) if hasattr(kl, 'item') else float(kl))
+        stats_history["policy_losses"].append(float(policy_loss) if hasattr(policy_loss, 'item') else float(policy_loss))
+        stats_history["values"].append(float(value_loss) if hasattr(value_loss, 'item') else float(value_loss))
+        stats_history["response_lengths"].append(
+            sum(len(r) for r in batch_responses) / len(batch_responses)
+        )
+
+        if (step + 1) % config.ppo.log_interval == 0:
+            kl_float = float(kl) if hasattr(kl, 'item') else float(kl)
+            policy_loss_float = float(policy_loss) if hasattr(policy_loss, 'item') else float(policy_loss)
+            value_loss_float = float(value_loss) if hasattr(value_loss, 'item') else float(value_loss)
+            logger.info(f"Step {step+1}/{config.ppo.num_steps} | "
+                       f"Reward: {avg_reward:.3f} | KL: {kl_float:.4f} | "
+                       f"Policy Loss: {policy_loss_float:.4f}")
+            tracker.log({
+                "ppo/step": step + 1,
+                "ppo/reward": avg_reward,
+                "ppo/kl": kl_float,
+                "ppo/policy_loss": policy_loss_float,
+                "ppo/value_loss": value_loss_float,
+            })
+
+        # Save checkpoint
+        if (step + 1) % config.ppo.save_interval == 0:
+            ckpt_path = os.path.join(output_dir, f"checkpoint-{step+1}")
+            os.makedirs(ckpt_path, exist_ok=True)
+            ppo_trainer.model.save_pretrained(ckpt_path)
+            tokenizer.save_pretrained(ckpt_path)
+            logger.info(f"Checkpoint saved to: {ckpt_path}")
+
+    # Generate AFTER PPO
+    logger.info("Generating responses AFTER PPO...")
+    ppo_trainer.model.eval()
+    after_responses = generate_responses(
+        ppo_trainer.model, tokenizer, test_prompts,
+        max_new_tokens=config.ppo.max_new_tokens,
+        temperature=config.ppo.temperature,
+        top_p=config.ppo.top_p,
+        top_k=config.ppo.top_k,
+        device=device,
+    )
+    after_rewards = [
+        reward_model.score(p, r) for p, r in zip(test_prompts, after_responses)
+    ]
+    for prompt, response, reward in zip(test_prompts, after_responses, after_rewards):
+        logger.info(f"  [{reward:.3f}] {prompt[:50]}... -> {response[:60]}...")
+
+    # Compute improvement
     avg_before = sum(before_rewards) / len(before_rewards)
     avg_after = sum(after_rewards) / len(after_rewards)
-    logger.info(f"Average reward: {avg_before:.3f} → {avg_after:.3f} ({avg_after - avg_before:+.3f})")
+    improvement = avg_after - avg_before
+    logger.info(f"Average reward: {avg_before:.3f} -> {avg_after:.3f} ({improvement:+.3f})")
 
-    # Save
+    # Save final model
     model_path = os.path.join(output_dir, "aligned_model")
-    policy_model.save_pretrained(model_path)
+    os.makedirs(model_path, exist_ok=True)
+    ppo_trainer.model.save_pretrained(model_path)
     tokenizer.save_pretrained(model_path)
     logger.info(f"Aligned model saved to: {model_path}")
 
+    # Save results
+    save_comparison_results(
+        test_prompts, before_responses, after_responses,
+        before_rewards, after_rewards,
+        os.path.join(output_dir, "ppo_comparison.json"),
+    )
+
     save_json({
-        "stats": ppo.stats,
-        "test_prompts": test_prompts,
-        "before_rewards": before_rewards,
-        "after_rewards": after_rewards,
-        "before_responses": before_responses,
-        "after_responses": after_responses,
+        "stats": stats_history,
+        "avg_before_reward": avg_before,
+        "avg_after_reward": avg_after,
+        "improvement": improvement,
     }, os.path.join(output_dir, "ppo_results.json"))
 
+    # Plot training curves
     plot_path = os.path.join(output_dir, "ppo_training_stats.png")
-    plot_ppo_stats(ppo.stats, plot_path)
+    plot_training_curves(stats_history, plot_path, title="PPO Training Curves")
     logger.info(f"Training plot saved to: {plot_path}")
 
+    create_symlink(output_dir, config.experiment.name, config.experiment.output_dir)
+
+    tracker.finish()
     logger.info("PPO alignment complete!")
     return model_path

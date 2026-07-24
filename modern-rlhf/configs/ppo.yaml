@@ -1,35 +1,61 @@
+# configs/ppo.yaml
+# Stage 3: PPO Alignment
+# GPU: RTX 4090 24GB
+
+experiment:
+  name: "ppo_qwen_0.5b"
+  output_dir: "outputs"
+  seed: 42
+
 model:
-  policy_model_path: "outputs/sft_qwen_0.5b/sft_model"  
-  base_model_name: "Qwen/Qwen2.5-0.5B-Instruct"  
-  reward_model_path: "outputs/reward_model_qwen_0.5b/value_head.pt"  
-  torch_dtype: "float32"
+  policy_model_path: "outputs/sft_latest/sft_model"
+  base_model_name: "Qwen/Qwen2.5-0.5B-Instruct"
+  reward_model_path: "outputs/rm_latest/reward_model"
+  torch_dtype: "bfloat16"
+  trust_remote_code: true
+  use_lora: true
+  lora:
+    r: 16
+    lora_alpha: 32
+    lora_dropout: 0.05
+    target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    bias: "none"
+    task_type: "CAUSAL_LM"
 
 ppo:
-  learning_rate: 1.0e-6
-  kl_coef: 0.1
+  learning_rate: 1.0e-5
+  kl_coef: 0.2
   clip_range: 0.2
-  num_steps: 10
-  batch_size: 4
-  max_new_tokens: 80
-  temperature: 0.7
-  top_p: 0.9
+  num_steps: 300
+  batch_size: 16
+  mini_batch_size: 4
+  ppo_epochs: 2
   gradient_clip: 1.0
-
+  max_new_tokens: 128
+  temperature: 0.8
+  top_p: 0.9
+  top_k: 50
+  do_sample: true
+  target_kl: 0.02
+  log_interval: 1
+  save_interval: 50
 
 data:
-  source: "toy"
-  # For huggingface:
-  # dataset_name: "tatsu-lab/alpaca"
-  # split: "train"
-  # max_samples: 100
-  # prompt_column: "instruction"
+  source: "huggingface"
+  dataset_name: "tatsu-lab/alpaca"
+  split: "train"
+  max_samples: 5000
+  prompt_column: "instruction"
   test_prompts:
-   - "Write a Python function to find the maximum value in a list."
-   - "Explain what machine learning is."
-   - "Tell me an interesting story."
-   - "How can I improve my English?"
+    - "Write a Python function to find the maximum value in a list."
+    - "Explain what machine learning is in simple terms."
+    - "Describe the difference between a stack and a queue."
+    - "How does backpropagation work in neural networks?"
+    - "Write a SQL query to find the top 5 highest-paid employees."
+    - "Explain the concept of attention in transformer models."
 
 tracking:
   log_interval: 1
   save_plots: true
   compare_before_after: true
+  project_name: "modern-rlhf"

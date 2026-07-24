@@ -1,5 +1,6 @@
 # configs/reward_model.yaml
-# Stage 2: Reward Model Training Configuration
+# Stage 2: Reward Model Training
+# GPU: RTX 4090 24GB
 
 experiment:
   name: "reward_model_qwen_0.5b"
@@ -8,29 +9,48 @@ experiment:
 
 model:
   name: "Qwen/Qwen2.5-0.5B-Instruct"
-  torch_dtype: "float32"
-  hidden_size: 896  # auto-detected if null
-  freeze_base: false  # whether to freeze the base LM
+  torch_dtype: "bfloat16"
+  trust_remote_code: true
+  hidden_size: null
+  freeze_base: true
+  use_lora: true
+  lora:
+    r: 8
+    lora_alpha: 16
+    lora_dropout: 0.05
+    target_modules: ["q_proj", "k_proj", "v_proj", "o_proj"]
+    bias: "none"
+    task_type: "SEQ_CLS"
+  num_labels: 1
 
 data:
-  source: "toy"  # "toy" | "huggingface" | "json"
-  # For huggingface:
-  # dataset_name: "Anthropic/hh-rlhf"
-  # split: "train"
-  # max_samples: 5000
-  # prompt_column: "prompt"
-  # chosen_column: "chosen"
-  # rejected_column: "rejected"
-  max_length: 256
-  train_test_split: 0.8
+  source: "huggingface"
+  dataset_name: "Anthropic/hh-rlhf"
+  split: "train"
+  max_samples: 10000
+  max_length: 512
+  train_test_split: 0.9
+  prompt_column: "prompt"
+  chosen_column: "chosen"
+  rejected_column: "rejected"
 
 training:
-  batch_size: 2
-  learning_rate: 1.0e-5
-  epochs: 5
-  optimizer: "AdamW"
-  weight_decay: 0.01
+  per_device_train_batch_size: 8
+  learning_rate: 1.0e-4
+  num_train_epochs: 1
+  logging_steps: 10
+  save_strategy: "epoch"
+  report_to: "wandb"
+  fp16: false
+  bf16: true
+  gradient_accumulation_steps: 2
+  warmup_ratio: 0.03
+  lr_scheduler_type: "cosine"
+  max_grad_norm: 1.0
+  loss_type: "bt_pairwise"
 
 evaluation:
+  eval_strategy: "steps"
+  eval_steps: 100
   visualize: true
   save_plots: true

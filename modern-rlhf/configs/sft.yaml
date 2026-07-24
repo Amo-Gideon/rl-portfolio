@@ -1,5 +1,7 @@
 # configs/sft.yaml
-# Stage 1: Supervised Fine-Tuning Configuration
+# Stage 1: Supervised Fine-Tuning
+# GPU: RTX 4090 24GB
+# VRAM: ~12-16GB with LoRA + bfloat16
 
 experiment:
   name: "sft_qwen_0.5b"
@@ -8,34 +10,47 @@ experiment:
 
 model:
   name: "Qwen/Qwen2.5-0.5B-Instruct"
-  torch_dtype: "float32"  # float32 for CPU, bfloat16 for GPU
+  torch_dtype: "bfloat16"
   trust_remote_code: true
+  use_lora: true
+  lora:
+    r: 16
+    lora_alpha: 32
+    lora_dropout: 0.05
+    target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    bias: "none"
+    task_type: "CAUSAL_LM"
 
 data:
-  source: "toy"  # "toy" | "huggingface" | "json"
-  # For huggingface:
-  # dataset_name: "tatsu-lab/alpaca"
-  # split: "train"
-  # max_samples: 1000
-  # text_column: "text"
-  # For json:
-  # json_path: "data/sft_data.json"
+  source: "huggingface"
+  dataset_name: "tatsu-lab/alpaca"
+  split: "train"
+  max_samples: 10000
+  text_column: "text"
   max_length: 512
 
 training:
-  per_device_train_batch_size: 2
-  learning_rate: 2.0e-5
-  num_train_epochs: 2
-  logging_steps: 1
+  per_device_train_batch_size: 8
+  learning_rate: 2.0e-4
+  num_train_epochs: 1
+  logging_steps: 10
   save_strategy: "epoch"
-  report_to: "none"  # "wandb" for experiment tracking
+  report_to: "wandb"
   fp16: false
-  gradient_accumulation_steps: 1
-  warmup_ratio: 0.1
+  bf16: true
+  gradient_accumulation_steps: 2
+  warmup_ratio: 0.03
+  lr_scheduler_type: "cosine"
+  max_grad_norm: 1.0
 
 evaluation:
+  eval_strategy: "steps"
+  eval_steps: 100
   test_prompts:
     - "Write a Python function to check if a number is even."
     - "Explain recursion with a real-life example."
-  max_new_tokens: 100
+    - "What are the key differences between supervised and reinforcement learning?"
+    - "Describe the architecture of a transformer model."
+  max_new_tokens: 150
   temperature: 0.7
+  top_p: 0.9

@@ -14,7 +14,11 @@
 | Feature | Description |
 |---------|-------------|
 | 🔧 **Modular Design** | Each stage is self-contained; swap data, models, or trainers independently |
+<<<<<<< HEAD
 | ⚙️ **Config-Driven** | All hyperparameters via YAML zero code changes needed |
+=======
+| ⚙️ **Config-Driven** | All hyperparameters via YAML — zero code changes needed |
+>>>>>>> 5c29891 (Update blog, results, and add new files)
 | 🧠 **TRL Integration** | Uses battle-tested TRL library for SFT and PPO |
 | 🎯 **LoRA Support** | Memory-efficient training with PEFT adapters |
 | 📚 **Real Datasets** | Alpaca for SFT, HH-RLHF for reward model |
@@ -108,7 +112,11 @@ Running the full pipeline on **Qwen2.5-0.5B-Instruct** (RTX 4090, 24GB):
 
 ### Training Curves
 
+<<<<<<< HEAD
 *Plots generated from training logs see `assets/` directory.*
+=======
+*Plots generated from training logs — see `assets/` directory.*
+>>>>>>> 5c29891 (Update blog, results, and add new files)
 
 ---
 
@@ -208,4 +216,8 @@ See [`docs/BLOG.md`](docs/BLOG.md) for a deep dive into the architecture, lesson
 
 - **Author:** Appau Gideon Kofi Amo
 - **Email:** gideonamoappau@gmail.com
+<<<<<<< HEAD
 - **GitHub:** [@Amo-Gideon](https://github.com/Amo-Gideon)
+=======
+- **GitHub:** [@Amo-Gideon](https://github.com/Amo-Gideon)
+>>>>>>> 5c29891 (Update blog, results, and add new files)
