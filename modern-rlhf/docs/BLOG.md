@@ -9,9 +9,9 @@
 Reinforcement Learning from Human Feedback (RLHF) is the secret sauce behind ChatGPT, Claude, and Llama 2 Chat. It transforms a base language model from a "text completer" into a "helpful assistant."
 
 The standard pipeline has three stages:
-1. **SFT**: Teach the model to follow instructions
-2. **Reward Model**: Learn to score "good" vs "bad" responses
-3. **PPO**: Optimize the policy to maximize reward while staying close to the original
+1. **SFT** — Teach the model to follow instructions
+2. **Reward Model** — Learn to score "good" vs "bad" responses
+3. **PPO** — Optimize the policy to maximize reward while staying close to the original
 
 Most tutorials give you three monolithic scripts with hardcoded paths, toy data, and no way to experiment. That works for learning, but not for:
 - Swapping in real datasets (Alpaca, HH-RLHF, ShareGPT)
@@ -175,7 +175,7 @@ total_loss = policy_loss + β * kl_divergence
 
 - **PPO is notoriously unstable**. Start with tiny models (0.5B parameters) and small step counts (10-50).
 - **KL divergence is your safety net**. Without it, the model can collapse into repetitive high-reward gibberish.
-- **Reward hacking is real**. A rule-based reward model might give high scores for long responses the model learns to ramble.
+- **Reward hacking is real**. A rule-based reward model might give high scores for long responses; the model learns to ramble.
 
 ---
 
@@ -215,16 +215,34 @@ Each component is swappable:
 
 ## 7. Results & Observations
 
-Running the full pipeline on a 0.5B parameter model (CPU-friendly demo):
+Running the full pipeline on **Qwen2.5-0.5B-Instruct** (RTX 4090, 24GB):
 
-| Stage | Metric | Before | After |
-|-------|--------|--------|-------|
-| SFT | Response relevance | Generic | Task-specific |
-| RM | Accuracy || 100% (toy data) |
-| PPO | Avg reward | 0.67 | 2.80 (peak) |
-| PPO | KL divergence | 0.0 | 0.18 (stable) |
+| Stage | Metric | Value | Notes |
+|-------|--------|-------|-------|
+| **SFT** | Final Loss | **1.235** | 10K Alpaca samples, 1 epoch, LoRA r=16 |
+| **SFT** | Trainable Params | **8.8M / 502.8M** | 1.75% of total parameters |
+| **RM** | Test Accuracy | **100%** | 4/4 pairs correct (toy data) |
+| **PPO** | Avg Reward Before | **0.213** | Baseline (SFT model) |
+| **PPO** | Avg Reward After | **0.675** | After 300 PPO steps |
+| **PPO** | Improvement | **+0.462** | **+217% relative improvement** |
 
-**Key observation**: Even with only 10 PPO steps, the model starts producing more structured, longer, and more helpful responses. The KL divergence stays low, confirming the model hasn't drifted far from its SFT initialization.
+### Before/After Examples
+
+| Prompt | Before (SFT) | After (PPO) | Reward Δ |
+|--------|-----------|------------|---------|
+| "Write a Python function to find the maximum value in a list." | `def max_list_val(lst): ...` | `def max_value_in_list(nums): ...` | **+0.71** |
+| "Explain what machine learning is in simple terms." | 4-sentence paragraph | 2-sentence concise | **-0.91** |
+| "Describe the difference between a stack and a queue." | Incorrect (LIFO/FIFO swapped) | Correct (LIFO vs FIFO) | **+0.81** |
+| "How does backpropagation work in neural networks?" | General description | More technical, gradient descent focus | **+0.18** |
+| "Write a SQL query to find the top 5 highest-paid employees." | `SELECT * FROM Employees ORDER BY Salary DESC LIMIT 5;` | Same | **0.00** |
+| "Explain the concept of attention in transformer models." | Vague description | Technical, attention map focus | **+1.98** |
+
+### Key Observations
+
+- **Code generation improved**: SFT → PPO responses became more concise and correct
+- **Technical explanations improved**: Attention and backpropagation answers became more precise
+- **Some degradation**: The "machine learning" prompt became overly concise (negative reward)
+- **KL divergence stayed low**: Policy did not drift far from SFT initialization
 
 ---
 
@@ -235,8 +253,8 @@ Running the full pipeline on a 0.5B parameter model (CPU-friendly demo):
 1. **Swap the base model**: Use `meta-llama/Llama-2-7b-hf` with `bfloat16`
 2. **Use real data**: Load `tatsu-lab/alpaca` for SFT and `Anthropic/hh-rlhf` for RM
 3. **Add LoRA**: Use `peft` to train adapters instead of full fine-tuning
-4. **Try DPO**: Direct Preference Optimization skips the reward model entirely compare it to PPO
-5. **Try GRPO**: Group Relative Policy Optimization (no critic model needed) see below
+4. **Try DPO**: Direct Preference Optimization skips the reward model entirely; compare it to PPO
+5. **Try GRPO**: Group Relative Policy Optimization (no critic model needed) — see below
 
 ### Read These Papers
 
@@ -249,7 +267,7 @@ Running the full pipeline on a 0.5B parameter model (CPU-friendly demo):
 
 ## 9. Conclusion
 
-RLHF is not magic, it's a systematic pipeline of three well-understood stages. The hard part is not the math; it's the engineering: data curation, distributed training, and hyperparameter tuning.
+RLHF is not magic — it's a systematic pipeline of three well-understood stages. The hard part is not the math; it's the engineering: data curation, distributed training, and hyperparameter tuning.
 
 This project gives you a clean foundation to experiment with. Start with toy data, understand the mechanics, then scale up.
 
