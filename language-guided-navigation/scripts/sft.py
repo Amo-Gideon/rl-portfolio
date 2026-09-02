@@ -31,7 +31,13 @@ class SFTDataset(Dataset):
         return len(self.examples)
 
     def __getitem__(self, idx):
-        text = format_sft_example(self.examples[idx])
+        pair = self.examples[idx]
+        prefix = f"{pair['observation']}\nAction: "
+        text = format_sft_example(pair)
+
+        prefix_ids = self.tokenizer(prefix, add_special_tokens=False)["input_ids"]
+        prefix_len = len(prefix_ids)
+
         enc = self.tokenizer(
             text,
             truncation=True,
@@ -39,9 +45,17 @@ class SFTDataset(Dataset):
             padding="max_length",
             return_tensors="pt",
         )
+        input_ids = enc["input_ids"].squeeze(0)
+        attention_mask = enc["attention_mask"].squeeze(0)
+
+        labels = input_ids.clone()
+        labels[:prefix_len] = -100
+        labels[attention_mask == 0] = -100
+
         return {
-            "input_ids": enc["input_ids"].squeeze(0),
-            "attention_mask": enc["attention_mask"].squeeze(0),
+            "input_ids": input_ids,
+            "attention_mask": attention_mask,
+            "labels": labels,
         }
 
 
@@ -82,8 +96,9 @@ def train_sft(config: dict):
         for batch in pbar:
             input_ids = batch["input_ids"].to(model.device)
             attention_mask = batch["attention_mask"].to(model.device)
+            labels = batch["labels"].to(model.device)
 
-            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=input_ids)
+            outputs = model(input_ids=input_ids, attention_mask=attention_mask, labels=labels)
             loss = outputs.loss
 
             optimizer.zero_grad()

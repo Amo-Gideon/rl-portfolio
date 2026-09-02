@@ -15,15 +15,15 @@ lora:
     - "v_proj"
 
 data:
-  num_tasks: 500
+  num_tasks: 2000
   seed: 42
 
 env:
   size: 5
 
 training:
-  num_epochs: 3
-  batch_size: 4
+  num_epochs: 5
+  batch_size: 8
   learning_rate: 5.0e-5
   max_length: 256
   grad_clip: 1.0
