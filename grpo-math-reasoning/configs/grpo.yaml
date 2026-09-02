@@ -1,0 +1,32 @@
+model:
+  # Local copy of Qwen2.5-0.5B-Instruct (same as language-guided-navigation)
+  name: "./models/Qwen2.5-0.5B-Instruct"
+  torch_dtype: "float32"
+  device_map: "auto"
+
+lora:
+  r: 8
+  lora_alpha: 16
+  lora_dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "v_proj"
+
+grpo:
+  group_size: 8
+  kl_beta: 0.01
+  epsilon: 0.2
+  lr: 1.0e-5
+  max_prompt_length: 128
+  max_response_length: 256
+
+data:
+  num_tasks: 300
+  seed: 42
+
+training:
+  num_epochs: 5
+  steps_per_epoch: 40
+
+output:
+  dir: "outputs/grpo_math"
