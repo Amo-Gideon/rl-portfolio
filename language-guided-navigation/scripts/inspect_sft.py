@@ -3,7 +3,7 @@
 Inspect what the SFT model outputs on a few training examples.
 
 Usage:
-    python scripts/inspect.py --checkpoint outputs/sft --num_examples 5 > inspect_log.txt
+    python scripts/inspect_sft.py --checkpoint outputs/sft --num_examples 5 > inspect_log.txt
 """
 
 import argparse
