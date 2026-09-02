@@ -1,90 +1,82 @@
 # Language-Guided Navigation Agent
 
-A minimal embodied-AI portfolio project: a small LLM learns to follow natural-language navigation instructions on a grid, then answers a question about the target object.
+A small end-to-end project where a 0.5B parameter language model learns to follow natural-language navigation instructions on a grid and answer a question about the object it reaches.
 
-**Why this exists:**
-- Demonstrates **LLM + RL** in a spatial/embodied setting.
-- Fits Prof. Yan Xia’s SPIN Lab interests (spatial intelligence, embodied AI, navigation).
-- Runs end-to-end on a **CPU** or small GPU instance (e.g., PAI-DSW 8-core/32GB or the AMD GPU quota).
+The agent receives instructions like *"Go to the red house and report its color"*, observes its surroundings as text, and emits structured JSON actions (`move_forward`, `turn_left`, `turn_right`, `look`) until it decides to answer.
 
-## Pipeline
+## What I built
 
-1. **Environment** (`src/env.py`): Grid world with landmarks, JSON actions, verifiable rewards.
-2. **Expert data** (`src/dataset.py`): Shortest-path trajectories generated with BFS.
-3. **Supervised warm-start** (`scripts/sft.py`): Fine-tune `Qwen2.5-0.5B-Instruct` with LoRA on expert demos.
-4. **RL fine-tuning** (`scripts/train_rl.py`): REINFORCE + KL penalty against the SFT checkpoint.
-5. **Evaluation** (`scripts/eval.py`) and **demo** (`scripts/demo.py`).
+- **`src/env.py`** — a deterministic grid-world environment with landmarks and verifiable rewards.
+- **`src/dataset.py`** — shortest-path expert trajectories generated with BFS for supervised warm-start.
+- **`scripts/sft.py`** — LoRA fine-tuning of `Qwen2.5-0.5B-Instruct` on expert demos, using the model’s chat template.
+- **`scripts/train_rl.py`** — REINFORCE + KL-penalty fine-tuning against a frozen reference model.
+- **`scripts/eval.py`** / **`scripts/demo.py`** — greedy evaluation and interactive demo.
+- **`scripts/visualize.py`** — frame-by-frame grid visualization of an episode.
+
+## Results
+
+| Stage | Success Rate | Avg Reward |
+|-------|--------------|------------|
+| SFT warm-start | 9/20 (45%) | 0.697 |
+| After RL fine-tuning | 11/20 (55%) | 0.738 |
+
+The RL stage gave a clear improvement over the supervised baseline. The biggest bottleneck now is the 15-step episode limit and the sparse reward signal — the agent sometimes wanders before locating the target.
 
 ## Quick start in PAI-DSW / Online VS Code
 
-The image in the screenshot (`ubuntu22.04-py312-torch2.3.1-1.39.0`) already has PyTorch. Install the remaining dependencies:
+The PAI-DSW image I used is `ubuntu22.04-py312-torch2.3.1-1.39.0`, which already has PyTorch.
+
+Install dependencies:
 
 ```bash
 git clone https://github.com/Amo-Gideon/rl-portfolio.git
 cd rl-portfolio/language-guided-navigation
-pip install transformers peft accelerate pyyaml tqdm
+pip install transformers peft accelerate pyyaml tqdm matplotlib
 ```
 
 ### Download the base model
 
-PAI-DSW sometimes cannot reach HuggingFace directly. Use the ModelScope downloader (ModelScope is preinstalled in the image):
+PAI-DSW cannot reach HuggingFace reliably, so download the model first. Either use the ModelScope downloader:
 
 ```bash
 python scripts/download_model.py --source modelscope
 ```
 
-This prints a local path like `models/qwen/Qwen2.5-0.5B-Instruct`. Set that path as `model.name` in `configs/sft.yaml` and `configs/rl.yaml`, or keep the default `./models/Qwen2.5-0.5B-Instruct` if you symlink/copy the folder there.
-
-If ModelScope is also unreachable, try the HuggingFace mirror:
+Or, if that fails, download `Qwen2.5-0.5B-Instruct` locally, zip it, upload it to `rl-portfolio/language-guided-navigation/models/`, and unzip:
 
 ```bash
-python scripts/download_model.py --source hf-mirror
+cd models
+python -m zipfile -e Qwen2.5-0.5B-Instruct.zip .
 ```
 
-If that keeps failing too, download the model locally and upload it manually:
+Set the resulting path as `model.name` in `configs/sft.yaml` and `configs/rl.yaml`. The default is `./models/Qwen2.5-0.5B-Instruct`.
 
-1. **On your local machine**, download with huggingface_hub:
-   ```bash
-   pip install huggingface_hub
-   python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen2.5-0.5B-Instruct', local_dir='Qwen2.5-0.5B-Instruct')"
-   ```
-2. **Zip the folder**:
-   ```bash
-   zip -r Qwen2.5-0.5B-Instruct.zip Qwen2.5-0.5B-Instruct
-   ```
-3. **Upload** the zip into PAI-DSW’s VS Code file explorer under:
-   ```
-   rl-portfolio/language-guided-navigation/models/
-   ```
-4. **Unzip** in the PAI-DSW terminal:
-   ```bash
-   cd rl-portfolio/language-guided-navigation/models
-   unzip Qwen2.5-0.5B-Instruct.zip
-   ```
-5. Make sure `model.name: "./models/Qwen2.5-0.5B-Instruct"` is set in `configs/sft.yaml` and `configs/rl.yaml`.
+### Train
 
-### SFT warm-start
+Supervised warm-start:
 
 ```bash
 python scripts/sft.py --config configs/sft.yaml
 ```
 
-### RL fine-tuning
+RL fine-tuning:
 
 ```bash
 python scripts/train_rl.py --config configs/rl.yaml
 ```
 
-### Evaluate / demo
+### Evaluate / demo / visualize
 
 ```bash
 python scripts/eval.py --checkpoint outputs/sft --num_tasks 20
+python scripts/eval.py --checkpoint outputs/rl --num_tasks 20
 python scripts/demo.py --checkpoint outputs/rl
+python scripts/visualize.py --checkpoint outputs/rl --output_dir assets/episode_viz
 ```
 
-## Local development
+## Local sanity checks
 
-No GPU required for the environment tests:
+No GPU or model download needed for the environment tests:
 
 ```bash
 python tests/test_env.py
@@ -96,13 +88,14 @@ python tests/test_dataset.py
 ```
 language-guided-navigation/
 ├── configs/          # YAML configs for SFT and RL
-├── scripts/          # sft.py, train_rl.py, eval.py, demo.py
-├── src/              # env.py, dataset.py, model_utils.py, rl_trainer.py
-└── tests/            # unit tests for env + dataset
+├── scripts/          # training, eval, demo, visualization
+├── src/              # env, dataset, model utils, trainer
+├── tests/            # unit tests
+└── assets/           # generated episode visualizations
 ```
 
-## Extending
+## What I learned / next steps
 
-- Replace the grid world with a **discrete 3D scene graph** or Matterport-like connectivity graph.
-- Swap REINFORCE for **GRPO** (group-relative advantage) from the `AGENTIC-RL` subproject.
-- Add a vision encoder so the agent reads rendered views instead of text observations.
+- **Chat template matters.** The first SFT attempt failed because I fed plain text to an instruct model; switching to the Qwen chat format immediately fixed the output structure.
+- **Sparse rewards are hard.** A 55% success rate means the agent still loses the target roughly half the time. Adding distance-based reward shaping or a larger instruction-following model would likely push this higher.
+- **Future extensions:** replace the text grid with a small rendered 3D scene, add a vision encoder, or swap REINFORCE for GRPO/VIMPO.
