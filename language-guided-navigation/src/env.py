@@ -124,20 +124,18 @@ class LangNavEnv:
         )
 
     def _describe_visible(self) -> str:
-        """Describe landmarks in the same row/column or immediate neighbors."""
+        """Describe all landmarks with relative direction and distance."""
         if not self.current_task:
             return "nothing"
         visible = []
         for name, (x, y) in self.current_task["objects"].items():
             if (x, y) == self.position:
-                visible.append(f"{name} here")
-            elif self._in_front((x, y)):
+                visible.append(f"{name} is here")
+            else:
                 dist = self._distance((x, y))
-                visible.append(f"{name} {dist} step(s) ahead")
-            elif x == self.position[0] or y == self.position[1]:
                 dir_name = self._relative_dir((x, y))
-                visible.append(f"{name} to the {dir_name}")
-        return ", ".join(visible) if visible else "empty surroundings"
+                visible.append(f"{name} is {dist} step(s) to the {dir_name}")
+        return "; ".join(visible) if visible else "empty surroundings"
 
     def _in_front(self, pos: Tuple[int, int]) -> bool:
         dx, dy = self.DIR_VECTORS[self.facing]
