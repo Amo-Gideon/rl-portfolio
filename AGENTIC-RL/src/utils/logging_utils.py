@@ -2,16 +2,22 @@
 Logging utilities for tracking experiments.
 """
 
-import wandb
 from typing import Dict, Optional
+
+try:
+    import wandb
+    _WANDB_AVAILABLE = True
+except Exception:  # pragma: no cover
+    wandb = None  # type: ignore
+    _WANDB_AVAILABLE = False
 
 
 class ExperimentLogger:
     """Wrapper for wandb and console logging."""
 
     def __init__(self, use_wandb: bool, project: str, run_name: str, config: Optional[Dict] = None):
-        self.use_wandb = use_wandb
         self.config = config or {}
+        self.use_wandb = use_wandb and _WANDB_AVAILABLE
 
         if self.use_wandb:
             wandb.init(project=project, name=run_name, config=config)
