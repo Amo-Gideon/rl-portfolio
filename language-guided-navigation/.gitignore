@@ -1,0 +1,17 @@
+# Model weights / datasets
+models/
+outputs/
+*.zip
+*.pt
+*.bin
+*.safetensors
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# IDE
+.vscode/
+.idea/

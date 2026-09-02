@@ -41,6 +41,28 @@ If ModelScope is also unreachable, try the HuggingFace mirror:
 python scripts/download_model.py --source hf-mirror
 ```
 
+If that keeps failing too, download the model locally and upload it manually:
+
+1. **On your local machine**, download with huggingface_hub:
+   ```bash
+   pip install huggingface_hub
+   python -c "from huggingface_hub import snapshot_download; snapshot_download('Qwen/Qwen2.5-0.5B-Instruct', local_dir='Qwen2.5-0.5B-Instruct')"
+   ```
+2. **Zip the folder**:
+   ```bash
+   zip -r Qwen2.5-0.5B-Instruct.zip Qwen2.5-0.5B-Instruct
+   ```
+3. **Upload** the zip into PAI-DSW’s VS Code file explorer under:
+   ```
+   rl-portfolio/language-guided-navigation/models/
+   ```
+4. **Unzip** in the PAI-DSW terminal:
+   ```bash
+   cd rl-portfolio/language-guided-navigation/models
+   unzip Qwen2.5-0.5B-Instruct.zip
+   ```
+5. Make sure `model.name: "./models/Qwen2.5-0.5B-Instruct"` is set in `configs/sft.yaml` and `configs/rl.yaml`.
+
 ### SFT warm-start
 
 ```bash
