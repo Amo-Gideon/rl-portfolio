@@ -25,6 +25,11 @@ venv/
 ENV/
 env/
 .venv
+rlenv/
+
+# Keep AGENTIC-RL sample data / notebooks despite global ignores below
+!AGENTIC-RL/data/*.jsonl
+!AGENTIC-RL/notebooks/*.ipynb
 
 # IDEs
 .vscode/
@@ -46,6 +51,10 @@ data/
 *.json
 *.jsonl
 *.csv
+
+# Keep AGENTIC-RL sample data despite global ignores
+!AGENTIC-RL/data/
+!AGENTIC-RL/data/*.jsonl
 
 # OS
 .DS_Store

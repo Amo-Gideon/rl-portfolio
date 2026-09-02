@@ -9,9 +9,9 @@
 Reinforcement Learning from Human Feedback (RLHF) is the secret sauce behind ChatGPT, Claude, and Llama 2 Chat. It transforms a base language model from a "text completer" into a "helpful assistant."
 
 The standard pipeline has three stages:
-1. **SFT**: Teach the model to follow instructions
-2. **Reward Model**: Learn to score "good" vs "bad" responses
-3. **PPO**: Optimize the policy to maximize reward while staying close to the original
+1. **SFT** — Teach the model to follow instructions
+2. **Reward Model** — Learn to score "good" vs "bad" responses
+3. **PPO** — Optimize the policy to maximize reward while staying close to the original
 
 Most tutorials give you three monolithic scripts with hardcoded paths, toy data, and no way to experiment. That works for learning, but not for:
 - Swapping in real datasets (Alpaca, HH-RLHF, ShareGPT)
@@ -267,7 +267,7 @@ Running the full pipeline on **Qwen2.5-0.5B-Instruct** (RTX 4090, 24GB):
 
 ## 9. Conclusion
 
-RLHF is not magic, it's a systematic pipeline of three well-understood stages. The hard part is not the math; it's the engineering: data curation, distributed training, and hyperparameter tuning.
+RLHF is not magic — it's a systematic pipeline of three well-understood stages. The hard part is not the math; it's the engineering: data curation, distributed training, and hyperparameter tuning.
 
 This project gives you a clean foundation to experiment with. Start with toy data, understand the mechanics, then scale up.
 

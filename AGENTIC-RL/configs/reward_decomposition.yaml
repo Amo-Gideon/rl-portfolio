@@ -1,0 +1,25 @@
+reward:
+  components:
+    format_reward: 0.2
+    tool_validity_reward: 0.3
+    answer_accuracy_reward: 0.5
+
+  ablation:
+    disable_format: false
+    disable_tool_validity: false
+    disable_answer: false
+
+  format:
+    required_keys:
+      - "thought"
+      - "tool_name"
+      - "tool_input"
+    final_answer_keys:
+      - "thought"
+      - "final_answer"
+
+  tools:
+    available:
+      - "search"
+      - "calculate"
+      - "run_code"

@@ -1,0 +1,46 @@
+model:
+  name: "Qwen/Qwen2.5-0.5B-Instruct"
+  torch_dtype: "float16"
+  device_map: "auto"
+  sft_checkpoint: null
+
+lora:
+  r: 8
+  lora_alpha: 16
+  lora_dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "v_proj"
+  task_type: "CAUSAL_LM"
+
+grpo:
+  num_epochs: 20
+  group_size: 2
+  max_prompt_length: 64
+  max_response_length: 128
+  actor_lr: 2.0e-5
+  kl_beta: 0.01
+  epsilon: 0.2
+  grad_clip_norm: 1.0
+  entropy_coef: 0.01
+  gamma: 0.99
+
+  # Memory optimizations
+  gradient_checkpointing: true
+  cpu_offload_reference: true
+  generate_on_cpu: false
+
+reward:
+  components:
+    format_reward: 0.2
+    tool_validity_reward: 0.3
+    answer_accuracy_reward: 0.5
+  numeric_tolerance: 0.05
+
+env:
+  max_steps: 3
+  num_tasks: 20
+
+checkpoint:
+  output_dir: "./checkpoint/grpo_lowmem"
+  save_every_n_epochs: 5

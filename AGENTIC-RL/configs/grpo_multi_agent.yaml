@@ -1,0 +1,50 @@
+model:
+  name: "Qwen/Qwen2.5-0.5B-Instruct"
+  torch_dtype: "bfloat16"
+  device_map: "auto"
+  sft_checkpoint: "./checkpoints/sft/final"
+
+lora:
+  r: 16
+  lora_alpha: 32
+  lora_dropout: 0.05
+  target_modules:
+    - "q_proj"
+    - "k_proj"
+    - "v_proj"
+    - "o_proj"
+  task_type: "CAUSAL_LM"
+
+grpo:
+  num_epochs: 50
+  group_size: 8
+  max_prompt_length: 128
+  max_response_length: 256
+  actor_lr: 1.0e-5
+  kl_beta: 0.01          
+  epsilon: 0.2          
+  grad_clip_norm: 1.0
+  gamma: 0.99         
+  entropy_coef: 0.01    
+  seed: 42
+
+reward:
+  components:
+    format_reward: 0.2
+    tool_validity_reward: 0.3
+    answer_accuracy_reward: 0.5
+  numeric_tolerance: 0.05
+
+env:
+  max_steps: 5
+  num_tasks: 50
+
+logging:
+  use_wandb: true
+  project: "agentic-rl"
+  run_name: "grpo_multi_tool_v1"
+  log_steps: 10
+
+checkpoint:
+  output_dir: "./checkpoints/grpo"
+  save_every_n_epochs: 10

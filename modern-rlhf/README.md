@@ -112,11 +112,8 @@ Running the full pipeline on **Qwen2.5-0.5B-Instruct** (RTX 4090, 24GB):
 
 ### Training Curves
 
-<<<<<<< HEAD
+
 *Plots generated from training logs see `assets/` directory.*
-=======
-*Plots generated from training logs — see `assets/` directory.*
->>>>>>> 5c29891 (Update blog, results, and add new files)
 
 ---
 
