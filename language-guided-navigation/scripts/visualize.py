@@ -4,9 +4,11 @@ Visualize one navigation episode as a sequence of grid images.
 
 Usage:
     python scripts/visualize.py --checkpoint outputs/rl --output_dir assets/episode_viz
+    python scripts/visualize.py --checkpoint outputs/rl --output_dir assets/episode_viz --find_success
 """
 
 import argparse
+import shutil
 import sys
 from pathlib import Path
 
@@ -57,25 +59,18 @@ def render_frame(env: LangNavEnv, step_idx: int, action_text: str, output_path: 
     plt.close(fig)
 
 
-def visualize(checkpoint: str, base_model_name: str, output_dir: str, size: int = 5):
-    if Path(checkpoint).exists() and (Path(checkpoint) / "adapter_config.json").exists():
-        model, tokenizer = load_adapter(checkpoint, base_model_name)
-    else:
-        tokenizer = load_tokenizer(base_model_name)
-        model = load_base_model(base_model_name)
-    model.eval()
-
-    env = LangNavEnv(size=size, max_steps=15, seed=11)
-    task = env._sample_task()
+def run_episode(model, tokenizer, env: LangNavEnv, task, out_path: Path):
+    """Run one episode and save frames. Returns (success, num_frames)."""
     obs = env.reset(task)
-
-    out_path = Path(output_dir)
+    if out_path.exists():
+        shutil.rmtree(out_path)
     out_path.mkdir(parents=True, exist_ok=True)
 
     step_idx = 0
     render_frame(env, step_idx, "START", out_path / f"step_{step_idx:02d}.png")
 
     done = False
+    info = {}
     while not done and env.step_count < env.max_steps:
         response = generate_action(model, tokenizer, obs, do_sample=False)
         obs, info, done = env.step(response)
@@ -86,7 +81,34 @@ def visualize(checkpoint: str, base_model_name: str, output_dir: str, size: int 
     if info.get("parsed") and isinstance(info["parsed"], dict) and "final_answer" in info["parsed"]:
         final_answer = info["parsed"]["final_answer"]
 
-    print(f"Saved {step_idx + 1} frames to {out_path}")
+    success = final_answer.strip().lower() == task["answer"].strip().lower()
+    return success, step_idx + 1, final_answer
+
+
+def visualize(checkpoint: str, base_model_name: str, output_dir: str, size: int = 5, seed: int = 0, find_success: bool = False):
+    if Path(checkpoint).exists() and (Path(checkpoint) / "adapter_config.json").exists():
+        model, tokenizer = load_adapter(checkpoint, base_model_name)
+    else:
+        tokenizer = load_tokenizer(base_model_name)
+        model = load_base_model(base_model_name)
+    model.eval()
+
+    out_path = Path(output_dir)
+
+    env = LangNavEnv(size=size, max_steps=15, seed=seed)
+    task = env._sample_task()
+    success, frames, final_answer = run_episode(model, tokenizer, env, task, out_path)
+
+    if find_success:
+        attempts = 1
+        while not success and attempts < 50:
+            env = LangNavEnv(size=size, max_steps=15, seed=seed + attempts)
+            task = env._sample_task()
+            success, frames, final_answer = run_episode(model, tokenizer, env, task, out_path)
+            attempts += 1
+        print(f"Found successful episode after {attempts} attempt(s)")
+
+    print(f"Saved {frames} frames to {out_path}")
     print(f"Task: {task['instruction']}")
     print(f"Final answer: {final_answer} | Ground truth: {task['answer']}")
 
@@ -97,6 +119,8 @@ if __name__ == "__main__":
     parser.add_argument("--base_model", type=str, default="./models/Qwen2.5-0.5B-Instruct")
     parser.add_argument("--output_dir", type=str, default="assets/episode_viz")
     parser.add_argument("--size", type=int, default=5)
+    parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--find_success", action="store_true")
     args = parser.parse_args()
 
-    visualize(args.checkpoint, args.base_model, args.output_dir, args.size)
+    visualize(args.checkpoint, args.base_model, args.output_dir, args.size, args.seed, args.find_success)
