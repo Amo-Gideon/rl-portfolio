@@ -17,7 +17,7 @@ def load_tokenizer(model_name: str):
 def load_base_model(model_name: str, torch_dtype: str = "float32", device_map: str = "auto"):
     model = AutoModelForCausalLM.from_pretrained(
         model_name,
-        torch_dtype=getattr(torch, torch_dtype),
+        dtype=getattr(torch, torch_dtype),
         device_map=device_map,
         trust_remote_code=True,
     )
@@ -42,12 +42,12 @@ def save_adapter(model, tokenizer, path: str):
     tokenizer.save_pretrained(path)
 
 
-def load_adapter(path: str, base_model_name: str, torch_dtype: str = "float32", device_map: str = "auto"):
+def load_adapter(path: str, base_model_name: str, torch_dtype: str = "float32", device_map: str = "auto", is_trainable: bool = False):
     """Load base model + LoRA adapter."""
     from peft import PeftModel
 
     base = load_base_model(base_model_name, torch_dtype, device_map)
-    model = PeftModel.from_pretrained(base, path)
+    model = PeftModel.from_pretrained(base, path, is_trainable=is_trainable)
     tokenizer = load_tokenizer(path)
     return model, tokenizer
 

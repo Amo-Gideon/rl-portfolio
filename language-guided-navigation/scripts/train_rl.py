@@ -41,8 +41,8 @@ def train_rl(config: dict):
     sft_path = config["model"].get("sft_checkpoint")
     if sft_path and Path(sft_path).exists():
         print(f"Loading SFT adapter from {sft_path}")
-        actor, _ = load_adapter(sft_path, model_name)
-        ref_model, _ = load_adapter(sft_path, model_name)
+        actor, _ = load_adapter(sft_path, model_name, is_trainable=True)
+        ref_model, _ = load_adapter(sft_path, model_name, is_trainable=False)
     else:
         print("No SFT checkpoint found, starting from base model")
         actor = load_base_model(
