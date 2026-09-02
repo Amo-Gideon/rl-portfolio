@@ -48,7 +48,7 @@ def demo(checkpoint: str, base_model_name: str, size: int = 5):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", type=str, default="outputs/sft")
-    parser.add_argument("--base_model", type=str, default="Qwen/Qwen2.5-0.5B-Instruct")
+    parser.add_argument("--base_model", type=str, default="./models/Qwen2.5-0.5B-Instruct")
     parser.add_argument("--size", type=int, default=5)
     args = parser.parse_args()
 

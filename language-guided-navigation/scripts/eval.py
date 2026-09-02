@@ -73,7 +73,7 @@ def evaluate(checkpoint: str, base_model_name: str, num_tasks: int = 20, size: i
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--checkpoint", type=str, required=True)
-    parser.add_argument("--base_model", type=str, default="Qwen/Qwen2.5-0.5B-Instruct")
+    parser.add_argument("--base_model", type=str, default="./models/Qwen2.5-0.5B-Instruct")
     parser.add_argument("--num_tasks", type=int, default=20)
     parser.add_argument("--size", type=int, default=5)
     args = parser.parse_args()
