@@ -22,6 +22,20 @@ The agent receives instructions like *"Go to the red house and report its color"
 
 The RL stage gave a clear improvement over the supervised baseline. The biggest bottleneck now is the 15-step episode limit and the sparse reward signal — the agent sometimes wanders before locating the target.
 
+## Episode visualization
+
+A successful episode (`visualize.py` with `--find_success`), showing the agent navigating to the target (green) and answering its color:
+
+| Start | Move | Move | Move | Answer |
+|-------|------|------|------|--------|
+| ![](assets/episode_viz/step_00.png) | ![](assets/episode_viz/step_01.png) | ![](assets/episode_viz/step_02.png) | ![](assets/episode_viz/step_03.png) | ![](assets/episode_viz/step_04.png) |
+
+Regenerate with:
+
+```bash
+python scripts/visualize.py --checkpoint outputs/rl --output_dir assets/episode_viz --find_success
+```
+
 ## Quick start in PAI-DSW / Online VS Code
 
 The PAI-DSW image I used is `ubuntu22.04-py312-torch2.3.1-1.39.0`, which already has PyTorch.
