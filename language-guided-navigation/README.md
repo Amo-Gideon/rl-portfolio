@@ -25,6 +25,22 @@ cd rl-portfolio/language-guided-navigation
 pip install transformers peft accelerate pyyaml tqdm
 ```
 
+### Download the base model
+
+PAI-DSW sometimes cannot reach HuggingFace directly. Use the ModelScope downloader (ModelScope is preinstalled in the image):
+
+```bash
+python scripts/download_model.py --source modelscope
+```
+
+This prints a local path like `models/qwen/Qwen2.5-0.5B-Instruct`. Set that path as `model.name` in `configs/sft.yaml` and `configs/rl.yaml`, or keep the default `./models/Qwen2.5-0.5B-Instruct` if you symlink/copy the folder there.
+
+If ModelScope is also unreachable, try the HuggingFace mirror:
+
+```bash
+python scripts/download_model.py --source hf-mirror
+```
+
 ### SFT warm-start
 
 ```bash

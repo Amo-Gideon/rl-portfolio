@@ -1,5 +1,8 @@
 model:
-  name: "Qwen/Qwen2.5-0.5B-Instruct"
+  # Run: python scripts/download_model.py
+  # Then point this to the printed local path, e.g.:
+  # name: "models/qwen/Qwen2.5-0.5B-Instruct"
+  name: "./models/Qwen2.5-0.5B-Instruct"
   torch_dtype: "float32"
   device_map: "auto"
 
