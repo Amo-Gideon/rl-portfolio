@@ -17,8 +17,8 @@ import torch
 from torch.utils.data import Dataset, DataLoader
 from tqdm import tqdm
 
-from dataset import generate_expert_dataset, format_sft_example
-from model_utils import load_actor, load_tokenizer, save_adapter
+from dataset import generate_expert_dataset
+from model_utils import load_actor, load_tokenizer, save_adapter, build_chat_prompt
 
 
 class SFTDataset(Dataset):
@@ -32,14 +32,17 @@ class SFTDataset(Dataset):
 
     def __getitem__(self, idx):
         pair = self.examples[idx]
-        prefix = f"{pair['observation']}\nAction: "
-        text = format_sft_example(pair)
+        observation = pair["observation"]
+        action_text = pair["action"]
 
-        prefix_ids = self.tokenizer(prefix, add_special_tokens=False)["input_ids"]
+        prompt_text = build_chat_prompt(self.tokenizer, observation)
+        full_text = build_chat_prompt(self.tokenizer, observation, action_text)
+
+        prefix_ids = self.tokenizer(prompt_text, add_special_tokens=False)["input_ids"]
         prefix_len = len(prefix_ids)
 
         enc = self.tokenizer(
-            text,
+            full_text,
             truncation=True,
             max_length=self.max_length,
             padding="max_length",
@@ -74,7 +77,7 @@ def train_sft(config: dict):
 
     print("Generating expert dataset...")
     examples = generate_expert_dataset(
-        num_tasks=config["data"].get("num_tasks", 200),
+        num_tasks=config["data"].get("num_tasks", 2000),
         size=config["env"].get("size", 5),
         seed=config["data"].get("seed", 42),
     )

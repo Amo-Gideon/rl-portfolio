@@ -7,6 +7,14 @@ from transformers import AutoModelForCausalLM, AutoTokenizer
 from peft import get_peft_model, LoraConfig, TaskType
 
 
+SYSTEM_PROMPT = (
+    "You are a navigation agent. Given an instruction and current surroundings, "
+    "respond with exactly one JSON object.\n"
+    'For actions: {"thought": "...", "action": "move_forward|turn_left|turn_right|look"}\n'
+    'For final answer: {"thought": "...", "final_answer": "..."}'
+)
+
+
 def load_tokenizer(model_name: str):
     tok = AutoTokenizer.from_pretrained(model_name, trust_remote_code=True)
     if tok.pad_token is None:
@@ -52,14 +60,28 @@ def load_adapter(path: str, base_model_name: str, torch_dtype: str = "float32", 
     return model, tokenizer
 
 
+def build_chat_prompt(tokenizer, observation: str, action_text: str = None) -> str:
+    """Build a chat-formatted prompt for Qwen-style instruct models."""
+    messages = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": observation},
+    ]
+    if action_text is None:
+        return tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True
+        )
+    messages.append({"role": "assistant", "content": action_text})
+    return tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+
+
 def compute_log_probs(model, tokenizer, observation: str, action_text: str):
     """
     Compute per-token log probabilities of action_text given observation.
     Returns tensor of shape [action_len].
     """
-    prefix = f"{observation}\nAction: "
-    prefix_ids = tokenizer(prefix, return_tensors="pt", add_special_tokens=False)["input_ids"]
-    full_text = prefix + action_text
+    prompt_text = build_chat_prompt(tokenizer, observation)
+    prefix_ids = tokenizer(prompt_text, return_tensors="pt", add_special_tokens=False)["input_ids"]
+    full_text = build_chat_prompt(tokenizer, observation, action_text)
     full_ids = tokenizer(full_text, return_tensors="pt", add_special_tokens=False)["input_ids"].to(model.device)
     prefix_len = prefix_ids.shape[1]
 
@@ -77,7 +99,7 @@ def compute_log_probs(model, tokenizer, observation: str, action_text: str):
 
 def generate_action(model, tokenizer, observation: str, max_new_tokens: int = 64, do_sample: bool = True, temperature: float = 0.7):
     """Generate one action / final answer JSON string."""
-    prompt = f"{observation}\nAction: "
+    prompt = build_chat_prompt(tokenizer, observation)
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512).to(model.device)
     gen_kwargs = {
         "max_new_tokens": max_new_tokens,
