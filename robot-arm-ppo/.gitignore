@@ -1,5 +1,6 @@
 outputs/
-assets/
+assets/*
+!assets/readme_frames/
 __pycache__/
 *.pyc
 .venv/

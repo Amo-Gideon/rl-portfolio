@@ -44,6 +44,22 @@ python scripts/eval.py --checkpoint outputs/ppo_arm.pt --episodes 50
 python scripts/visualize.py --checkpoint outputs/ppo_arm.pt --output_dir assets/viz
 ```
 
+## Results
+
+PPO (SB3) trained for 250k timesteps on CPU, evaluated on 100 held-out episodes:
+
+| Metric | Value |
+|--------|-------|
+| Success rate | **70.0%** |
+| Final distance | 0.103 +- 0.092 |
+| Avg episode length | 44.4 (early stop on success) |
+
+A successful reaching episode (start -> success in 28 steps):
+
+| Start | Mid | Mid | Success |
+|-------|-----|-----|---------|
+| ![](assets/readme_frames/a_start.png) | ![](assets/readme_frames/b_mid1.png) | ![](assets/readme_frames/c_mid2.png) | ![](assets/readme_frames/d_success.png) |
+
 ## Environment details
 
 - **State** (6-dim): `[cos j1, sin j1, cos j2, sin j2, target_x, target_y]` — joint angles encoded as sin/cos so the policy sees a continuous representation.
