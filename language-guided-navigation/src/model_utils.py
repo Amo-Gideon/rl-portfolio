@@ -79,15 +79,16 @@ def generate_action(model, tokenizer, observation: str, max_new_tokens: int = 64
     """Generate one action / final answer JSON string."""
     prompt = f"{observation}\nAction: "
     inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=512).to(model.device)
+    gen_kwargs = {
+        "max_new_tokens": max_new_tokens,
+        "do_sample": do_sample,
+        "pad_token_id": tokenizer.pad_token_id,
+        "eos_token_id": tokenizer.eos_token_id,
+    }
+    if do_sample:
+        gen_kwargs["temperature"] = temperature
+        gen_kwargs["top_p"] = 0.9
     with torch.no_grad():
-        outputs = model.generate(
-            **inputs,
-            max_new_tokens=max_new_tokens,
-            do_sample=do_sample,
-            temperature=temperature,
-            top_p=0.9,
-            pad_token_id=tokenizer.pad_token_id,
-            eos_token_id=tokenizer.eos_token_id,
-        )
+        outputs = model.generate(**inputs, **gen_kwargs)
     response_ids = outputs[0][inputs["input_ids"].shape[1]:]
     return tokenizer.decode(response_ids, skip_special_tokens=True)
